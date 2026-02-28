@@ -5,18 +5,46 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 
+-- ========================================== --
+--             MOBILE TOGGLE UI               --
+-- ========================================== --
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BSSMobileToggle"
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.Size = UDim2.new(0, 45, 0, 45)
+ToggleBtn.Position = UDim2.new(0, 10, 0.5, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Text = "🐝"
+ToggleBtn.TextScaled = true
+ToggleBtn.UICorner = Instance.new("UICorner")
+ToggleBtn.UICorner.CornerRadius = UDim.new(0.5, 0) -- Makes it a circle
+ToggleBtn.Active = true
+ToggleBtn.Draggable = true -- Allows mobile users to drag it around the screen
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    -- Simulates pressing RightShift to toggle the Rayfield UI
+    game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
+    game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+end)
+
+-- ========================================== --
+--                MAIN WINDOW                 --
+-- ========================================== --
 local Window = Rayfield:CreateWindow({
    Name = "🐝 Custom BSS Hub",
    LoadingTitle = "Loading Custom Features...",
    LoadingIcon = 10013087265,
    Theme = "Default",
+   KeySystem = false
 })
 
--- ========================================== --
---                TABS SETUP                  --
--- ========================================== --
 local TabNormal = Window:CreateTab("🍯 Normal Farm", 4483362458)
 local TabProgression = Window:CreateTab("📈 Progression", 4483362458)
 local TabBoost = Window:CreateTab("🔴 Boosting Mode", 4483362458)
@@ -38,11 +66,8 @@ TabNormal:CreateToggle({
        autoDigActive = Value
        if autoDigActive then
            autoDigConnection = RunService.RenderStepped:Connect(function()
-               local char = LocalPlayer.Character
-               if char then
-                   local tool = char:FindFirstChildOfClass("Tool")
-                   if tool then tool:Activate() end
-               end
+               -- Uses VirtualUser to simulate a real mouse click for BSS
+               VirtualUser:ClickButton1(Vector2.new(0, 0))
            end)
        else
            if autoDigConnection then autoDigConnection:Disconnect() end
@@ -50,7 +75,7 @@ TabNormal:CreateToggle({
    end,
 })
 
-TabNormal:CreateSection("Field Farming")
+TabNormal:CreateSection("Field Farming & Auto Collect")
 
 local normalFarmActive = false
 local normalFarmConnection = nil
@@ -79,6 +104,18 @@ TabNormal:CreateToggle({
                local rootPart, humanoid = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
                if not rootPart or not humanoid then return end
 
+               -- MAGNETIZE TOKENS WHILE FARMING
+               local col = Workspace:FindFirstChild("Collectibles")
+               if col then
+                   for _, token in pairs(col:GetChildren()) do
+                       if (token:IsA("Part") or token:IsA("MeshPart")) and (token.Position - rootPart.Position).Magnitude <= 35 then
+                           firetouchinterest(rootPart, token, 0)
+                           firetouchinterest(rootPart, token, 1)
+                       end
+                   end
+               end
+
+               -- MOVEMENT LOGIC
                local flowerZones = Workspace:FindFirstChild("FlowerZones")
                if flowerZones then
                    local targetField = flowerZones:FindFirstChild(selectedField)
@@ -117,27 +154,17 @@ TabProgression:CreateToggle({
            autoConvertConnection = task.spawn(function()
                while autoConvertActive do
                    task.wait(2)
-                   -- Safety check for CoreStats
                    if LocalPlayer:FindFirstChild("CoreStats") and LocalPlayer.CoreStats:FindFirstChild("Pollen") and LocalPlayer.CoreStats:FindFirstChild("Capacity") then
-                       local currentPollen = LocalPlayer.CoreStats.Pollen.Value
-                       local maxCapacity = LocalPlayer.CoreStats.Capacity.Value
-                       
-                       -- If backpack is 95% full or more
-                       if currentPollen >= (maxCapacity * 0.95) then
+                       if LocalPlayer.CoreStats.Pollen.Value >= (LocalPlayer.CoreStats.Capacity.Value * 0.95) then
                            local char = LocalPlayer.Character
                            local humanoid = char and char:FindFirstChild("Humanoid")
                            local spawnPos = LocalPlayer:FindFirstChild("SpawnPos")
                            
-                           -- Teleport/Walk back to claimed hive
                            if char and humanoid and spawnPos and spawnPos.Value then
-                               -- Disable normal farm temporarily while converting
                                local wasFarming = normalFarmActive
                                normalFarmActive = false 
-                               
                                humanoid:MoveTo(spawnPos.Value.Position)
-                               task.wait(5) -- Wait for conversion to happen
-                               
-                               -- Re-enable normal farm
+                               task.wait(5) 
                                normalFarmActive = wasFarming
                            end
                        end
@@ -162,22 +189,17 @@ TabProgression:CreateToggle({
    Callback = function(Value)
        autoToysActive = Value
        if autoToysActive then
-           Rayfield:Notify({Title = "Auto Toys Active", Content = "Will auto-collect Wealth Clock and Dispensers.", Duration = 3})
            autoToysConnection = task.spawn(function()
                while autoToysActive do
                    local char = LocalPlayer.Character
                    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-                   
                    if rootPart then
-                       -- Define things we want to automatically touch/interact with
                        local targetToys = {"Wealth Clock", "Glue Dispenser", "Blueberry Dispenser", "Strawberry Dispenser", "Treat Dispenser"}
-                       
                        local toysFolder = Workspace:FindFirstChild("Toys")
                        if toysFolder then
                            for _, toyName in pairs(targetToys) do
                                local toy = toysFolder:FindFirstChild(toyName)
                                if toy then
-                                   -- Look for a platform or part to touch to activate the dispenser
                                    local platform = toy:FindFirstChild("Platform") or toy:FindFirstChildWhichIsA("BasePart")
                                    if platform then
                                        firetouchinterest(rootPart, platform, 0)
@@ -187,7 +209,6 @@ TabProgression:CreateToggle({
                            end
                        end
                    end
-                   -- Check every 60 seconds (no need to spam dispensers)
                    task.wait(60)
                end
            end)
@@ -219,7 +240,6 @@ TabBoost:CreateToggle({
                local rootPart, humanoid = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
                if not rootPart or not humanoid then return end
 
-               -- Magnet
                local col = Workspace:FindFirstChild("Collectibles")
                if col then
                    for _, token in pairs(col:GetChildren()) do
@@ -229,7 +249,6 @@ TabBoost:CreateToggle({
                    end
                end
 
-               -- Marks
                local bestSpot, shortestDist = nil, math.huge
                for _, obj in pairs(Workspace:GetDescendants()) do
                    if obj.Name == "PreciseMark" or (obj:IsA("ParticleEmitter") and obj.Name == "Crosshair") then
