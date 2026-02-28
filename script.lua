@@ -5,6 +5,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser") -- Added VirtualUser for Auto Dig
 local LocalPlayer = Players.LocalPlayer
 
 local Window = Rayfield:CreateWindow({
@@ -23,7 +24,7 @@ local TabBoost = Window:CreateTab("🔴 Boosting Mode", 4483362458)
 local TabSafety = Window:CreateTab("🛡️ Safety", 4483362458)
 
 -- ========================================== --
---           TAB 1: NORMAL FARM               --
+--            TAB 1: NORMAL FARM              --
 -- ========================================== --
 TabNormal:CreateSection("Auto Digging")
 
@@ -38,11 +39,8 @@ TabNormal:CreateToggle({
        autoDigActive = Value
        if autoDigActive then
            autoDigConnection = RunService.RenderStepped:Connect(function()
-               local char = LocalPlayer.Character
-               if char then
-                   local tool = char:FindFirstChildOfClass("Tool")
-                   if tool then tool:Activate() end
-               end
+               -- Fixed: Uses VirtualUser to force the tool to swing
+               VirtualUser:ClickButton1(Vector2.new(0, 0))
            end)
        else
            if autoDigConnection then autoDigConnection:Disconnect() end
