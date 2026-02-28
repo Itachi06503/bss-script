@@ -6,28 +6,56 @@ local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
-local VirtualInputManager = game:GetService("VirtualInputManager") -- Switched to VIM for mobile
 local LocalPlayer = Players.LocalPlayer
 
+-- ========================================== --
+--             AUTO CLAIM HIVE                --
+-- ========================================== --
+local function ClaimAvailableHive()
+    if not LocalPlayer:FindFirstChild("SpawnPos") or not LocalPlayer.SpawnPos.Value then
+        local honeycombs = Workspace:FindFirstChild("Honeycombs")
+        if honeycombs then
+            for _, hive in pairs(honeycombs:GetChildren()) do
+                if hive:FindFirstChild("Owner") and hive.Owner.Value == nil then
+                    local pad = hive:FindFirstChild("ClaimPad") or hive:FindFirstChild("Platform")
+                    local char = LocalPlayer.Character
+                    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+                    if pad and rootPart then
+                        -- Teleport to the unowned hive pad and claim it
+                        rootPart.CFrame = pad.CFrame + Vector3.new(0, 3, 0)
+                        task.wait(0.5)
+                        firetouchinterest(rootPart, pad, 0)
+                        firetouchinterest(rootPart, pad, 1)
+                        task.wait(1)
+                        if LocalPlayer.SpawnPos.Value then break end
+                    end
+                end
+            end
+        end
+    end
+end
+-- Run immediately upon execution
+task.spawn(ClaimAvailableHive)
+
+-- ========================================== --
+--                MAIN WINDOW                 --
+-- ========================================== --
 local Window = Rayfield:CreateWindow({
-   Name = "🐝 Custom BSS Hub",
+   Name = "🐝 Nefoli_BSS Hub",
    LoadingTitle = "Loading Custom Features...",
    LoadingIcon = 10013087265,
    Theme = "Default",
 })
 
--- ========================================== --
---                TABS SETUP                  --
--- ========================================== --
 local TabNormal = Window:CreateTab("🍯 Normal Farm", 4483362458)
 local TabProgression = Window:CreateTab("📈 Progression", 4483362458)
-local TabBoost = Window:CreateTab("🔴 Boosting Mode", 4483362458)
 local TabSafety = Window:CreateTab("🛡️ Safety", 4483362458)
 
 -- ========================================== --
 --             TWEENING SYSTEM                --
 -- ========================================== --
-local farmSpeed = 40
+local tweenSpeed = 60
+local walkSpeed = 35
 local activeTween = nil
 
 local function TweenTo(targetPos)
@@ -37,7 +65,7 @@ local function TweenTo(targetPos)
     if not rootPart then return end
 
     local distance = (rootPart.Position - targetPos).Magnitude
-    local timeToTravel = distance / farmSpeed
+    local timeToTravel = distance / tweenSpeed
     
     local tweenInfo = TweenInfo.new(timeToTravel, Enum.EasingStyle.Linear)
     activeTween = TweenService:Create(rootPart, tweenInfo, {CFrame = CFrame.new(targetPos)})
@@ -56,12 +84,12 @@ end
 -- ========================================== --
 --            TAB 1: NORMAL FARM              --
 -- ========================================== --
-TabNormal:CreateSection("Auto Digging")
+TabNormal:CreateSection("Auto Digging (Remote)")
 
 local autoDigActive = false
 
 TabNormal:CreateToggle({
-   Name = "Auto Dig / Swing Tool",
+   Name = "Auto Dig (Equips & Activates Tool)",
    CurrentValue = false,
    Flag = "AutoDig", 
    Callback = function(Value)
@@ -69,24 +97,47 @@ TabNormal:CreateToggle({
        if autoDigActive then
            task.spawn(function()
                while autoDigActive do
-                   -- Simulates a raw left-click/tap in the center of the screen
-                   VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-                   task.wait(0.05)
-                   VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-                   task.wait(0.2) -- Adjust delay if it swings too fast/slow
+                   local char = LocalPlayer.Character
+                   if char then
+                       local humanoid = char:FindFirstChild("Humanoid")
+                       local tool = char:FindFirstChildOfClass("Tool")
+                       
+                       -- Force equip tool if it's sitting in the backpack
+                       if not tool then
+                           local backpackTool = LocalPlayer.Backpack:FindFirstChildOfClass("Tool")
+                           if backpackTool and humanoid then
+                               humanoid:EquipTool(backpackTool)
+                               tool = backpackTool
+                           end
+                       end
+                       
+                       -- Remotely trigger the tool
+                       if tool then
+                           tool:Activate()
+                       end
+                   end
+                   task.wait(0.2)
                end
            end)
        end
    end,
 })
 
-TabNormal:CreateSection("Field Farming (Tween Movement)")
+TabNormal:CreateSection("Movement Settings")
 
 TabNormal:CreateSlider({
-   Name = "Tween / Walk Speed",
-   Range = {20, 100}, Increment = 1, Suffix = "Speed", CurrentValue = 40, Flag = "FarmSpeedSlider",
-   Callback = function(Value) farmSpeed = Value end,
+   Name = "Tween Speed (Flying to Field)",
+   Range = {30, 150}, Increment = 5, Suffix = "Speed", CurrentValue = 60, Flag = "TweenSpeedSlider",
+   Callback = function(Value) tweenSpeed = Value end,
 })
+
+TabNormal:CreateSlider({
+   Name = "Walk Speed (Farming inside Field)",
+   Range = {16, 80}, Increment = 1, Suffix = "Speed", CurrentValue = 35, Flag = "WalkSpeedSlider",
+   Callback = function(Value) walkSpeed = Value end,
+})
+
+TabNormal:CreateSection("Field Farming")
 
 local normalFarmActive = false
 local normalFarmLoop = nil
@@ -103,7 +154,7 @@ TabNormal:CreateDropdown({
 })
 
 TabNormal:CreateToggle({
-   Name = "Enable Normal Farm (Tween & Collect)",
+   Name = "Enable Hybrid Farm (Tween to Field, Walk to Farm)",
    CurrentValue = false,
    Flag = "NormalFarm", 
    Callback = function(Value)
@@ -113,9 +164,13 @@ TabNormal:CreateToggle({
                while normalFarmActive do
                    local char = LocalPlayer.Character
                    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+                   local humanoid = char and char:FindFirstChild("Humanoid")
                    
-                   if rootPart then
-                       -- 1. Auto Collect Tokens in radius
+                   if rootPart and humanoid then
+                       -- Apply Custom WalkSpeed
+                       humanoid.WalkSpeed = walkSpeed
+
+                       -- Auto Collect Tokens in radius
                        local col = Workspace:FindFirstChild("Collectibles")
                        if col then
                            for _, token in pairs(col:GetChildren()) do
@@ -126,35 +181,40 @@ TabNormal:CreateToggle({
                            end
                        end
 
-                       -- 2. Tween Movement Logic
+                       -- Movement Logic
                        local flowerZones = Workspace:FindFirstChild("FlowerZones")
                        if flowerZones then
                            local targetField = flowerZones:FindFirstChild(selectedField)
                            if targetField then
                                local distToField = (rootPart.Position - targetField.Position).Magnitude
                                
-                               -- If far away, tween to the center of the field
+                               -- If far away, TWEEN (Fly) to the field
                                if distToField > 45 then
-                                   local t = TweenTo(targetField.Position + Vector3.new(0, 3, 0))
+                                   local t = TweenTo(targetField.Position + Vector3.new(0, 5, 0))
                                    if t then t.Completed:Wait() end
                                else
-                                   -- If already in the field, pick a random spot and tween there
-                                   local rx = targetField.Position.X + math.random(-25, 25)
-                                   local rz = targetField.Position.Z + math.random(-25, 25)
-                                   local randomPos = Vector3.new(rx, targetField.Position.Y + 2, rz)
-                                   
-                                   local t = TweenTo(randomPos)
-                                   if t then t.Completed:Wait() end
+                                   -- If inside the field, Cancel Tween and WALK
+                                   CancelTween()
+                                   if humanoid.MoveDirection.Magnitude == 0 then
+                                       local rx = targetField.Position.X + math.random(-25, 25)
+                                       local rz = targetField.Position.Z + math.random(-25, 25)
+                                       humanoid:MoveTo(Vector3.new(rx, targetField.Position.Y, rz))
+                                   end
                                end
                            end
                        end
                    end
-                   task.wait(0.1)
+                   task.wait(0.2)
                end
            end)
        else
            CancelTween()
            if normalFarmLoop then task.cancel(normalFarmLoop) end
+           -- Reset walkspeed to normal when turning off
+           local char = LocalPlayer.Character
+           if char and char:FindFirstChild("Humanoid") then
+               char.Humanoid.WalkSpeed = 16
+           end
        end
    end,
 })
@@ -168,7 +228,7 @@ local autoConvertActive = false
 local autoConvertConnection = nil
 
 TabProgression:CreateToggle({
-   Name = "Auto Convert (Return to Hive when full)",
+   Name = "Auto Convert (Tween to Hive when full)",
    CurrentValue = false,
    Flag = "AutoConvert", 
    Callback = function(Value)
@@ -182,25 +242,20 @@ TabProgression:CreateToggle({
                        local maxCapacity = LocalPlayer.CoreStats.Capacity.Value
                        
                        if currentPollen >= (maxCapacity * 0.95) then
-                           local char = LocalPlayer.Character
                            local spawnPos = LocalPlayer:FindFirstChild("SpawnPos")
                            
-                           if char and spawnPos and spawnPos.Value then
+                           if spawnPos and spawnPos.Value then
                                local wasFarming = normalFarmActive
                                
-                               -- Disable normal farm temporarily
-                               if wasFarming then 
-                                   normalFarmActive = false 
-                                   CancelTween()
-                               end
+                               if wasFarming then normalFarmActive = false end
                                
-                               -- Tween to hive
-                               local t = TweenTo(spawnPos.Value.Position)
+                               -- Tween to the front of the hive
+                               local t = TweenTo(spawnPos.Value.Position + Vector3.new(0, 0, 5))
                                if t then t.Completed:Wait() end
                                
-                               task.wait(5) -- Wait for conversion
+                               -- Wait for backpack to empty out
+                               task.wait(5) 
                                
-                               -- Re-enable normal farm
                                if wasFarming then normalFarmActive = true end
                            end
                        end
@@ -213,111 +268,8 @@ TabProgression:CreateToggle({
    end,
 })
 
-TabProgression:CreateSection("World Interactables")
-
-local autoToysActive = false
-local autoToysConnection = nil
-
-TabProgression:CreateToggle({
-   Name = "Auto Wealth Clock & Free Dispensers",
-   CurrentValue = false,
-   Flag = "AutoToys", 
-   Callback = function(Value)
-       autoToysActive = Value
-       if autoToysActive then
-           autoToysConnection = task.spawn(function()
-               while autoToysActive do
-                   local char = LocalPlayer.Character
-                   local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-                   
-                   if rootPart then
-                       local targetToys = {"Wealth Clock", "Glue Dispenser", "Blueberry Dispenser", "Strawberry Dispenser", "Treat Dispenser"}
-                       local toysFolder = Workspace:FindFirstChild("Toys")
-                       
-                       if toysFolder then
-                           for _, toyName in pairs(targetToys) do
-                               local toy = toysFolder:FindFirstChild(toyName)
-                               if toy then
-                                   local platform = toy:FindFirstChild("Platform") or toy:FindFirstChildWhichIsA("BasePart")
-                                   if platform then
-                                       firetouchinterest(rootPart, platform, 0)
-                                       firetouchinterest(rootPart, platform, 1)
-                                   end
-                               end
-                           end
-                       end
-                   end
-                   task.wait(60)
-               end
-           end)
-       else
-           if autoToysConnection then task.cancel(autoToysConnection) end
-       end
-   end,
-})
-
 -- ========================================== --
---          TAB 3: RED HIVE BOOSTER           --
--- ========================================== --
-TabBoost:CreateSection("Perfect Red Hive Boost")
-
-local boostActive = false
-local magnetRadius = 35
-local boostConnection = nil
-
-TabBoost:CreateToggle({
-   Name = "🔴 Enable Red Hive Booster",
-   CurrentValue = false,
-   Flag = "RedBooster", 
-   Callback = function(Value)
-       boostActive = Value
-       if boostActive then
-           boostConnection = RunService.Heartbeat:Connect(function()
-               local char = LocalPlayer.Character
-               if not char then return end
-               local rootPart = char:FindFirstChild("HumanoidRootPart")
-               if not rootPart then return end
-
-               local col = Workspace:FindFirstChild("Collectibles")
-               if col then
-                   for _, token in pairs(col:GetChildren()) do
-                       if (token:IsA("Part") or token:IsA("MeshPart")) and (token.Position - rootPart.Position).Magnitude <= magnetRadius then
-                           firetouchinterest(rootPart, token, 0); firetouchinterest(rootPart, token, 1)
-                       end
-                   end
-               end
-
-               local bestSpot, shortestDist = nil, math.huge
-               for _, obj in pairs(Workspace:GetDescendants()) do
-                   if obj.Name == "PreciseMark" or (obj:IsA("ParticleEmitter") and obj.Name == "Crosshair") then
-                       local p = obj:IsA("BasePart") and obj or obj.Parent
-                       if p and p:IsA("BasePart") then
-                           local d = (p.Position - rootPart.Position).Magnitude
-                           if d < 60 and d < shortestDist then shortestDist, bestSpot = d, p.Position end
-                       end
-                   end
-               end
-
-               if bestSpot then
-                   -- Reusing TweenTo for boosting to precise marks
-                   TweenTo(bestSpot)
-               end
-           end)
-       else
-           CancelTween()
-           if boostConnection then boostConnection:Disconnect() end
-       end
-   end,
-})
-
-TabBoost:CreateSlider({
-   Name = "Token Magnet Radius",
-   Range = {10, 50}, Increment = 1, Suffix = "Studs", CurrentValue = 35, Flag = "MagnetSlider",
-   Callback = function(Value) magnetRadius = Value end,
-})
-
--- ========================================== --
---              TAB 4: SAFETY                 --
+--              TAB 3: SAFETY                 --
 -- ========================================== --
 TabSafety:CreateSection("Anti-Ban Features")
 
