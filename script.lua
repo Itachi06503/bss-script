@@ -7,44 +7,43 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local VirtualUser = game:GetService("VirtualUser")
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 
 -- ========================================== --
---             MOBILE TOGGLE UI               --
+--          📱 MOBILE TOGGLE UI 📱            --
 -- ========================================== --
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "NefoliMobileToggle"
+-- Protects the GUI from being deleted by the game
+if syn and syn.protect_gui then syn.protect_gui(ScreenGui) end
 ScreenGui.Parent = game:GetService("CoreGui")
 
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Parent = ScreenGui
-ToggleBtn.Size = UDim2.new(0, 45, 0, 45)
-ToggleBtn.Position = UDim2.new(0, 10, 0.5, 0)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleBtn.Size = UDim2.new(0, 55, 0, 55) -- Made slightly bigger for mobile thumbs
+ToggleBtn.Position = UDim2.new(0, 15, 0.5, -27)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleBtn.Text = "🐝"
 ToggleBtn.TextScaled = true
-ToggleBtn.UICorner = Instance.new("UICorner")
-ToggleBtn.UICorner.CornerRadius = UDim.new(0.5, 0)
+ToggleBtn.BackgroundTransparency = 0.2
+ToggleBtn.AutoButtonColor = false
 
--- Custom Mobile & PC Dragging Logic
-local dragging = false
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0.5, 0)
+UICorner.Parent = ToggleBtn
+
+-- Perfected Mobile Drag & Click Logic
+local isDragging = false
 local hasDragged = false
-local dragInput, mousePos, framePos
+local dragInput, dragStartPos, startPos
 
 ToggleBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
+        isDragging = true
         hasDragged = false
-        mousePos = input.Position
-        framePos = ToggleBtn.Position
-
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
+        dragStartPos = input.Position
+        startPos = ToggleBtn.Position
     end
 end)
 
@@ -55,25 +54,29 @@ ToggleBtn.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - mousePos
-        -- If the user moves their finger more than 5 pixels, it counts as a drag, not a tap
+    if input == dragInput and isDragging then
+        local delta = input.Position - dragStartPos
+        -- If the finger moves more than 5 pixels, it counts as a drag
         if delta.Magnitude > 5 then
             hasDragged = true
         end
-        ToggleBtn.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+        ToggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 
--- Toggle Menu Logic (Only fires if you TAPPED, not dragged)
 ToggleBtn.InputEnded:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = false
+        -- If the user tapped WITHOUT dragging, toggle the UI
         if not hasDragged then
-            -- Simulates pressing RightShift to toggle the Rayfield UI
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
-            task.wait()
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+            pcall(function()
+                local VIM = game:GetService("VirtualInputManager")
+                VIM:SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
+                task.wait()
+                VIM:SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+            end)
         end
+        hasDragged = false
     end
 end)
 
