@@ -1,18 +1,20 @@
 -- ======================================================== --
---         🐝 CUSTOM BSS HUB | RED HIVE EDITION 🐝          --
+--           🐝 Nefoli_BSS | RED HIVE EDITION 🐝            --
 -- ======================================================== --
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local VirtualUser = game:GetService("VirtualUser")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 
 -- ========================================== --
 --             MOBILE TOGGLE UI               --
 -- ========================================== --
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "BSSMobileToggle"
+ScreenGui.Name = "NefoliMobileToggle"
 ScreenGui.Parent = game:GetService("CoreGui")
 
 local ToggleBtn = Instance.new("TextButton")
@@ -24,22 +26,63 @@ ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleBtn.Text = "🐝"
 ToggleBtn.TextScaled = true
 ToggleBtn.UICorner = Instance.new("UICorner")
-ToggleBtn.UICorner.CornerRadius = UDim.new(0.5, 0) -- Makes it a circle
-ToggleBtn.Active = true
-ToggleBtn.Draggable = true -- Allows mobile users to drag it around the screen
+ToggleBtn.UICorner.CornerRadius = UDim.new(0.5, 0)
 
-ToggleBtn.MouseButton1Click:Connect(function()
-    -- Simulates pressing RightShift to toggle the Rayfield UI
-    game:GetService("VirtualInputManager"):SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
-    game:GetService("VirtualInputManager"):SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+-- Custom Mobile & PC Dragging Logic
+local dragging = false
+local hasDragged = false
+local dragInput, mousePos, framePos
+
+ToggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        hasDragged = false
+        mousePos = input.Position
+        framePos = ToggleBtn.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+ToggleBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - mousePos
+        -- If the user moves their finger more than 5 pixels, it counts as a drag, not a tap
+        if delta.Magnitude > 5 then
+            hasDragged = true
+        end
+        ToggleBtn.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
+    end
+end)
+
+-- Toggle Menu Logic (Only fires if you TAPPED, not dragged)
+ToggleBtn.InputEnded:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+        if not hasDragged then
+            -- Simulates pressing RightShift to toggle the Rayfield UI
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
+            task.wait()
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+        end
+    end
 end)
 
 -- ========================================== --
 --                MAIN WINDOW                 --
 -- ========================================== --
 local Window = Rayfield:CreateWindow({
-   Name = "🐝 Custom BSS Hub",
-   LoadingTitle = "Loading Custom Features...",
+   Name = "🐝 Nefoli_BSS | Red Hive Edition",
+   LoadingTitle = "Loading Nefoli_BSS...",
    LoadingIcon = 10013087265,
    Theme = "Default",
    KeySystem = false
@@ -66,7 +109,6 @@ TabNormal:CreateToggle({
        autoDigActive = Value
        if autoDigActive then
            autoDigConnection = RunService.RenderStepped:Connect(function()
-               -- Uses VirtualUser to simulate a real mouse click for BSS
                VirtualUser:ClickButton1(Vector2.new(0, 0))
            end)
        else
@@ -104,7 +146,6 @@ TabNormal:CreateToggle({
                local rootPart, humanoid = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
                if not rootPart or not humanoid then return end
 
-               -- MAGNETIZE TOKENS WHILE FARMING
                local col = Workspace:FindFirstChild("Collectibles")
                if col then
                    for _, token in pairs(col:GetChildren()) do
@@ -115,7 +156,6 @@ TabNormal:CreateToggle({
                    end
                end
 
-               -- MOVEMENT LOGIC
                local flowerZones = Workspace:FindFirstChild("FlowerZones")
                if flowerZones then
                    local targetField = flowerZones:FindFirstChild(selectedField)
