@@ -5,7 +5,8 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local VirtualUser = game:GetService("VirtualUser") -- Added VirtualUser for Auto Dig
+local TweenService = game:GetService("TweenService")
+local VirtualInputManager = game:GetService("VirtualInputManager") -- Switched to VIM for mobile
 local LocalPlayer = Players.LocalPlayer
 
 local Window = Rayfield:CreateWindow({
@@ -24,12 +25,40 @@ local TabBoost = Window:CreateTab("🔴 Boosting Mode", 4483362458)
 local TabSafety = Window:CreateTab("🛡️ Safety", 4483362458)
 
 -- ========================================== --
+--             TWEENING SYSTEM                --
+-- ========================================== --
+local farmSpeed = 40
+local activeTween = nil
+
+local function TweenTo(targetPos)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local rootPart = char:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    local distance = (rootPart.Position - targetPos).Magnitude
+    local timeToTravel = distance / farmSpeed
+    
+    local tweenInfo = TweenInfo.new(timeToTravel, Enum.EasingStyle.Linear)
+    activeTween = TweenService:Create(rootPart, tweenInfo, {CFrame = CFrame.new(targetPos)})
+    activeTween:Play()
+    
+    return activeTween
+end
+
+local function CancelTween()
+    if activeTween then
+        activeTween:Cancel()
+        activeTween = nil
+    end
+end
+
+-- ========================================== --
 --            TAB 1: NORMAL FARM              --
 -- ========================================== --
 TabNormal:CreateSection("Auto Digging")
 
 local autoDigActive = false
-local autoDigConnection = nil
 
 TabNormal:CreateToggle({
    Name = "Auto Dig / Swing Tool",
@@ -38,20 +67,29 @@ TabNormal:CreateToggle({
    Callback = function(Value)
        autoDigActive = Value
        if autoDigActive then
-           autoDigConnection = RunService.RenderStepped:Connect(function()
-               -- Fixed: Uses VirtualUser to force the tool to swing
-               VirtualUser:ClickButton1(Vector2.new(0, 0))
+           task.spawn(function()
+               while autoDigActive do
+                   -- Simulates a raw left-click/tap in the center of the screen
+                   VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                   task.wait(0.05)
+                   VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                   task.wait(0.2) -- Adjust delay if it swings too fast/slow
+               end
            end)
-       else
-           if autoDigConnection then autoDigConnection:Disconnect() end
        end
    end,
 })
 
-TabNormal:CreateSection("Field Farming")
+TabNormal:CreateSection("Field Farming (Tween Movement)")
+
+TabNormal:CreateSlider({
+   Name = "Tween / Walk Speed",
+   Range = {20, 100}, Increment = 1, Suffix = "Speed", CurrentValue = 40, Flag = "FarmSpeedSlider",
+   Callback = function(Value) farmSpeed = Value end,
+})
 
 local normalFarmActive = false
-local normalFarmConnection = nil
+local normalFarmLoop = nil
 local selectedField = "Sunflower Field"
 local bssFields = {"Sunflower Field", "Dandelion Field", "Mushroom Field", "Blue Flower Field", "Clover Field", "Spider Field", "Strawberry Field", "Bamboo Field", "Pine Tree Forest", "Rose Field", "Stump Field", "Cactus Field", "Pumpkin Patch", "Pineapple Patch", "Pepper Patch", "Coconut Field"}
 
@@ -65,34 +103,58 @@ TabNormal:CreateDropdown({
 })
 
 TabNormal:CreateToggle({
-   Name = "Enable Normal Farm (Wander & Collect)",
+   Name = "Enable Normal Farm (Tween & Collect)",
    CurrentValue = false,
    Flag = "NormalFarm", 
    Callback = function(Value)
        normalFarmActive = Value
        if normalFarmActive then
-           normalFarmConnection = RunService.Heartbeat:Connect(function()
-               local char = LocalPlayer.Character
-               if not char then return end
-               local rootPart, humanoid = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
-               if not rootPart or not humanoid then return end
+           normalFarmLoop = task.spawn(function()
+               while normalFarmActive do
+                   local char = LocalPlayer.Character
+                   local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+                   
+                   if rootPart then
+                       -- 1. Auto Collect Tokens in radius
+                       local col = Workspace:FindFirstChild("Collectibles")
+                       if col then
+                           for _, token in pairs(col:GetChildren()) do
+                               if (token:IsA("Part") or token:IsA("MeshPart")) and (token.Position - rootPart.Position).Magnitude <= 35 then
+                                   firetouchinterest(rootPart, token, 0)
+                                   firetouchinterest(rootPart, token, 1)
+                               end
+                           end
+                       end
 
-               local flowerZones = Workspace:FindFirstChild("FlowerZones")
-               if flowerZones then
-                   local targetField = flowerZones:FindFirstChild(selectedField)
-                   if targetField then
-                       if (rootPart.Position - targetField.Position).Magnitude > 45 then
-                           humanoid:MoveTo(targetField.Position)
-                       elseif humanoid.MoveDirection.Magnitude == 0 then
-                           local rx = targetField.Position.X + math.random(-25, 25)
-                           local rz = targetField.Position.Z + math.random(-25, 25)
-                           humanoid:MoveTo(Vector3.new(rx, targetField.Position.Y, rz))
+                       -- 2. Tween Movement Logic
+                       local flowerZones = Workspace:FindFirstChild("FlowerZones")
+                       if flowerZones then
+                           local targetField = flowerZones:FindFirstChild(selectedField)
+                           if targetField then
+                               local distToField = (rootPart.Position - targetField.Position).Magnitude
+                               
+                               -- If far away, tween to the center of the field
+                               if distToField > 45 then
+                                   local t = TweenTo(targetField.Position + Vector3.new(0, 3, 0))
+                                   if t then t.Completed:Wait() end
+                               else
+                                   -- If already in the field, pick a random spot and tween there
+                                   local rx = targetField.Position.X + math.random(-25, 25)
+                                   local rz = targetField.Position.Z + math.random(-25, 25)
+                                   local randomPos = Vector3.new(rx, targetField.Position.Y + 2, rz)
+                                   
+                                   local t = TweenTo(randomPos)
+                                   if t then t.Completed:Wait() end
+                               end
+                           end
                        end
                    end
+                   task.wait(0.1)
                end
            end)
        else
-           if normalFarmConnection then normalFarmConnection:Disconnect() end
+           CancelTween()
+           if normalFarmLoop then task.cancel(normalFarmLoop) end
        end
    end,
 })
@@ -115,28 +177,31 @@ TabProgression:CreateToggle({
            autoConvertConnection = task.spawn(function()
                while autoConvertActive do
                    task.wait(2)
-                   -- Safety check for CoreStats
                    if LocalPlayer:FindFirstChild("CoreStats") and LocalPlayer.CoreStats:FindFirstChild("Pollen") and LocalPlayer.CoreStats:FindFirstChild("Capacity") then
                        local currentPollen = LocalPlayer.CoreStats.Pollen.Value
                        local maxCapacity = LocalPlayer.CoreStats.Capacity.Value
                        
-                       -- If backpack is 95% full or more
                        if currentPollen >= (maxCapacity * 0.95) then
                            local char = LocalPlayer.Character
-                           local humanoid = char and char:FindFirstChild("Humanoid")
                            local spawnPos = LocalPlayer:FindFirstChild("SpawnPos")
                            
-                           -- Teleport/Walk back to claimed hive
-                           if char and humanoid and spawnPos and spawnPos.Value then
-                               -- Disable normal farm temporarily while converting
+                           if char and spawnPos and spawnPos.Value then
                                local wasFarming = normalFarmActive
-                               normalFarmActive = false 
                                
-                               humanoid:MoveTo(spawnPos.Value.Position)
-                               task.wait(5) -- Wait for conversion to happen
+                               -- Disable normal farm temporarily
+                               if wasFarming then 
+                                   normalFarmActive = false 
+                                   CancelTween()
+                               end
+                               
+                               -- Tween to hive
+                               local t = TweenTo(spawnPos.Value.Position)
+                               if t then t.Completed:Wait() end
+                               
+                               task.wait(5) -- Wait for conversion
                                
                                -- Re-enable normal farm
-                               normalFarmActive = wasFarming
+                               if wasFarming then normalFarmActive = true end
                            end
                        end
                    end
@@ -160,22 +225,19 @@ TabProgression:CreateToggle({
    Callback = function(Value)
        autoToysActive = Value
        if autoToysActive then
-           Rayfield:Notify({Title = "Auto Toys Active", Content = "Will auto-collect Wealth Clock and Dispensers.", Duration = 3})
            autoToysConnection = task.spawn(function()
                while autoToysActive do
                    local char = LocalPlayer.Character
                    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
                    
                    if rootPart then
-                       -- Define things we want to automatically touch/interact with
                        local targetToys = {"Wealth Clock", "Glue Dispenser", "Blueberry Dispenser", "Strawberry Dispenser", "Treat Dispenser"}
-                       
                        local toysFolder = Workspace:FindFirstChild("Toys")
+                       
                        if toysFolder then
                            for _, toyName in pairs(targetToys) do
                                local toy = toysFolder:FindFirstChild(toyName)
                                if toy then
-                                   -- Look for a platform or part to touch to activate the dispenser
                                    local platform = toy:FindFirstChild("Platform") or toy:FindFirstChildWhichIsA("BasePart")
                                    if platform then
                                        firetouchinterest(rootPart, platform, 0)
@@ -185,7 +247,6 @@ TabProgression:CreateToggle({
                            end
                        end
                    end
-                   -- Check every 60 seconds (no need to spam dispensers)
                    task.wait(60)
                end
            end)
@@ -214,10 +275,9 @@ TabBoost:CreateToggle({
            boostConnection = RunService.Heartbeat:Connect(function()
                local char = LocalPlayer.Character
                if not char then return end
-               local rootPart, humanoid = char:FindFirstChild("HumanoidRootPart"), char:FindFirstChild("Humanoid")
-               if not rootPart or not humanoid then return end
+               local rootPart = char:FindFirstChild("HumanoidRootPart")
+               if not rootPart then return end
 
-               -- Magnet
                local col = Workspace:FindFirstChild("Collectibles")
                if col then
                    for _, token in pairs(col:GetChildren()) do
@@ -227,7 +287,6 @@ TabBoost:CreateToggle({
                    end
                end
 
-               -- Marks
                local bestSpot, shortestDist = nil, math.huge
                for _, obj in pairs(Workspace:GetDescendants()) do
                    if obj.Name == "PreciseMark" or (obj:IsA("ParticleEmitter") and obj.Name == "Crosshair") then
@@ -240,14 +299,12 @@ TabBoost:CreateToggle({
                end
 
                if bestSpot then
-                   if (Vector3.new(bestSpot.X, rootPart.Position.Y, bestSpot.Z) - rootPart.Position).Magnitude < 3 then
-                       humanoid:MoveTo(rootPart.Position) 
-                   else
-                       humanoid:MoveTo(bestSpot) 
-                   end
+                   -- Reusing TweenTo for boosting to precise marks
+                   TweenTo(bestSpot)
                end
            end)
        else
+           CancelTween()
            if boostConnection then boostConnection:Disconnect() end
        end
    end,
@@ -265,7 +322,7 @@ TabBoost:CreateSlider({
 TabSafety:CreateSection("Anti-Ban Features")
 
 TabSafety:CreateButton({
-   Name = "Load Anti-Mod Kicker (Runs in background)",
+   Name = "Load Anti-Mod Kicker",
    Callback = function()
        local dangerousPlayers = {"Onett", "Nabees", "Tito"}
        local function checkP(p)
