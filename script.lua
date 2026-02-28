@@ -21,7 +21,6 @@ local function ClaimAvailableHive()
                     local char = LocalPlayer.Character
                     local rootPart = char and char:FindFirstChild("HumanoidRootPart")
                     if pad and rootPart then
-                        -- Teleport to the unowned hive pad and claim it
                         rootPart.CFrame = pad.CFrame + Vector3.new(0, 3, 0)
                         task.wait(0.5)
                         firetouchinterest(rootPart, pad, 0)
@@ -34,7 +33,6 @@ local function ClaimAvailableHive()
         end
     end
 end
--- Run immediately upon execution
 task.spawn(ClaimAvailableHive)
 
 -- ========================================== --
@@ -51,9 +49,6 @@ local TabNormal = Window:CreateTab("🍯 Normal Farm", 4483362458)
 local TabProgression = Window:CreateTab("📈 Progression", 4483362458)
 local TabSafety = Window:CreateTab("🛡️ Safety", 4483362458)
 
--- ========================================== --
---             TWEENING SYSTEM                --
--- ========================================== --
 local tweenSpeed = 60
 local walkSpeed = 35
 local activeTween = nil
@@ -84,12 +79,12 @@ end
 -- ========================================== --
 --            TAB 1: NORMAL FARM              --
 -- ========================================== --
-TabNormal:CreateSection("Auto Digging (Remote)")
+TabNormal:CreateSection("Auto Digging (Hardware Level)")
 
 local autoDigActive = false
 
 TabNormal:CreateToggle({
-   Name = "Auto Dig (Equips & Activates Tool)",
+   Name = "Auto Dig (mouse1click)",
    CurrentValue = false,
    Flag = "AutoDig", 
    Callback = function(Value)
@@ -102,21 +97,26 @@ TabNormal:CreateToggle({
                        local humanoid = char:FindFirstChild("Humanoid")
                        local tool = char:FindFirstChildOfClass("Tool")
                        
-                       -- Force equip tool if it's sitting in the backpack
+                       -- Force equip tool
                        if not tool then
                            local backpackTool = LocalPlayer.Backpack:FindFirstChildOfClass("Tool")
                            if backpackTool and humanoid then
                                humanoid:EquipTool(backpackTool)
-                               tool = backpackTool
                            end
                        end
                        
-                       -- Remotely trigger the tool
-                       if tool then
-                           tool:Activate()
+                       -- Hardware-level click (Bypasses BSS custom tool logic)
+                       if mouse1click then
+                           mouse1click()
+                       else
+                           -- Fallback for executors that don't support mouse1click
+                           local vim = game:GetService("VirtualInputManager")
+                           vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                           task.wait(0.05)
+                           vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
                        end
                    end
-                   task.wait(0.2)
+                   task.wait(0.2) -- Frequency of tool swings
                end
            end)
        end
@@ -167,10 +167,8 @@ TabNormal:CreateToggle({
                    local humanoid = char and char:FindFirstChild("Humanoid")
                    
                    if rootPart and humanoid then
-                       -- Apply Custom WalkSpeed
                        humanoid.WalkSpeed = walkSpeed
 
-                       -- Auto Collect Tokens in radius
                        local col = Workspace:FindFirstChild("Collectibles")
                        if col then
                            for _, token in pairs(col:GetChildren()) do
@@ -181,19 +179,16 @@ TabNormal:CreateToggle({
                            end
                        end
 
-                       -- Movement Logic
                        local flowerZones = Workspace:FindFirstChild("FlowerZones")
                        if flowerZones then
                            local targetField = flowerZones:FindFirstChild(selectedField)
                            if targetField then
                                local distToField = (rootPart.Position - targetField.Position).Magnitude
                                
-                               -- If far away, TWEEN (Fly) to the field
                                if distToField > 45 then
                                    local t = TweenTo(targetField.Position + Vector3.new(0, 5, 0))
                                    if t then t.Completed:Wait() end
                                else
-                                   -- If inside the field, Cancel Tween and WALK
                                    CancelTween()
                                    if humanoid.MoveDirection.Magnitude == 0 then
                                        local rx = targetField.Position.X + math.random(-25, 25)
@@ -210,7 +205,6 @@ TabNormal:CreateToggle({
        else
            CancelTween()
            if normalFarmLoop then task.cancel(normalFarmLoop) end
-           -- Reset walkspeed to normal when turning off
            local char = LocalPlayer.Character
            if char and char:FindFirstChild("Humanoid") then
                char.Humanoid.WalkSpeed = 16
@@ -246,14 +240,11 @@ TabProgression:CreateToggle({
                            
                            if spawnPos and spawnPos.Value then
                                local wasFarming = normalFarmActive
-                               
                                if wasFarming then normalFarmActive = false end
                                
-                               -- Tween to the front of the hive
                                local t = TweenTo(spawnPos.Value.Position + Vector3.new(0, 0, 5))
                                if t then t.Completed:Wait() end
                                
-                               -- Wait for backpack to empty out
                                task.wait(5) 
                                
                                if wasFarming then normalFarmActive = true end
